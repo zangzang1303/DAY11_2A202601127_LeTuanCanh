@@ -1,5 +1,27 @@
 # Day 11 — Controlled Agent Security (2026)
 
+## Thông tin bài nộp
+
+- **Họ tên:** Lê Tuấn Cảnh
+- **MSSV:** 2A202601127
+
+## Cách chạy
+
+Từ thư mục gốc của repository, sau khi cài dependencies và cấu hình
+`GOOGLE_API_KEY` trong `.env`:
+
+```powershell
+# Chạy pipeline tạo outputs
+cd src
+python main.py --part 5
+cd ..
+
+# Self-check chính thức trước khi nộp
+pytest tests/smoke -q
+pytest tests/public -q
+python scripts/grade.py --submission-dir . --out outputs/grade_report.json
+```
+
 Làm sao để ứng dụng agent an toàn hơn?
 
 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).
