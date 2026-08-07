@@ -33,14 +33,37 @@ class MonitoringAlert:
     rate_limit_hits: int = 0
     judge_checks: int = 0
     judge_fails: int = 0
+    _alerted_metrics: set[str] = field(default_factory=set, repr=False)
 
     def check_metrics(self) -> list[Alert]:
         """TODO: compute rates, append Alert objects when thresholds exceeded."""
-        raise NotImplementedError("Implement MonitoringAlert.check_metrics")
+        block_rate = self.blocked_requests / self.total_requests if self.total_requests else 0.0
+        judge_fail_rate = self.judge_fails / self.judge_checks if self.judge_checks else 0.0
+        current = {
+            "block_rate": (block_rate, self.block_rate_threshold, block_rate > self.block_rate_threshold,
+                            f"Block rate {block_rate:.1%} exceeds threshold {self.block_rate_threshold:.1%}"),
+            "rate_limit_hits": (float(self.rate_limit_hits), float(self.rate_limit_hit_threshold),
+                                self.rate_limit_hits >= self.rate_limit_hit_threshold,
+                                f"Rate-limit hits {self.rate_limit_hits} reached threshold {self.rate_limit_hit_threshold}"),
+            "judge_fail_rate": (judge_fail_rate, self.judge_fail_rate_threshold,
+                                judge_fail_rate > self.judge_fail_rate_threshold,
+                                f"Judge fail rate {judge_fail_rate:.1%} exceeds threshold {self.judge_fail_rate_threshold:.1%}"),
+        }
+        for metric, (value, threshold, exceeded, message) in current.items():
+            if exceeded and metric not in self._alerted_metrics:
+                self.alerts.append(Alert(metric=metric, value=value, threshold=threshold, message=message))
+                self._alerted_metrics.add(metric)
+            elif not exceeded:
+                self._alerted_metrics.discard(metric)
+        return list(self.alerts)
 
     def export_json(self, filepath: str = "outputs/metrics.json"):
         """TODO: write metrics + alerts to JSON."""
-        raise NotImplementedError("Implement MonitoringAlert.export_json")
+        from pathlib import Path
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.snapshot(), ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
 
     def snapshot(self) -> dict:
         block_rate = (

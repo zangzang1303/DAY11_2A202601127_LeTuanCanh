@@ -11,11 +11,31 @@ from __future__ import annotations
 
 import re
 
-from google.adk.agents import llm_agent
-from google.adk import runners
-from google.adk.plugins import base_plugin
-from google.adk.agents.invocation_context import InvocationContext
-from google.genai import types
+try:
+    from google.adk.agents import llm_agent
+    from google.adk import runners
+    from google.adk.plugins import base_plugin
+    from google.adk.agents.invocation_context import InvocationContext
+    from google.genai import types
+    _ADK_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    _ADK_AVAILABLE = False
+    class _Part:
+        def __init__(self, text=""): self.text = text
+        @classmethod
+        def from_text(cls, text): return cls(text)
+    class _Content:
+        def __init__(self, role="user", parts=None): self.role, self.parts = role, parts or []
+    class _Types: Content, Part = _Content, _Part
+    class _BasePlugin:
+        def __init__(self, name=None): self.name = name
+    class _BasePluginModule: BasePlugin = _BasePlugin
+    class _LlmAgent:
+        def __init__(self, **kwargs): self.__dict__.update(kwargs)
+    class _LlmAgentModule: LlmAgent = _LlmAgent
+    llm_agent, runners, base_plugin, InvocationContext, types = (
+        _LlmAgentModule(), None, _BasePluginModule(), object, _Types()
+    )
 
 from agents.security_boundary import (
     ActionDecision,
@@ -28,6 +48,7 @@ from agents.security_boundary import (
     normalize_for_security,
 )
 from core.config import ALLOWED_TOPICS, BLOCKED_TOPICS
+from core.config import ADK_MODEL
 from core.utils import chat_with_agent
 
 # Secrets embedded in the guarded system prompt (same values as unsafe agent).
@@ -239,9 +260,11 @@ class GuardsOutputPlugin(base_plugin.BasePlugin):
 
 def create_guards_agent():
     """Create VinBank agent with strong input + output guardrails (bonus target)."""
+    if not _ADK_AVAILABLE:
+        raise RuntimeError("Google ADK is unavailable; install requirements before creating the agent")
     plugins = [GuardsInputPlugin(), GuardsOutputPlugin()]
     agent = llm_agent.LlmAgent(
-        model="gemini-3.1-flash-lite",
+        model=ADK_MODEL,
         name="guards_assistant",
         instruction=GUARDS_INSTRUCTION,
     )

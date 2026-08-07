@@ -4,6 +4,7 @@ Lab 11 — Part 4: Human-in-the-Loop Design
   TODO 12: Design 3 HITL decision points
 """
 from dataclasses import dataclass
+import math
 
 
 # ============================================================
@@ -26,6 +27,8 @@ HIGH_RISK_ACTIONS = [
     "change_password",
     "delete_data",
     "update_personal_info",
+    "change_beneficiary",
+    "change_recipient",
 ]
 
 
@@ -84,13 +87,41 @@ class ConfidenceRouter:
         #      action="escalate", priority="high",
         #      requires_human=True, reason="Low confidence — escalating"
 
+        try:
+            confidence_value = float(confidence)
+        except (TypeError, ValueError):
+            confidence_value = float("nan")
+
+        if action_type in HIGH_RISK_ACTIONS:
+            return RoutingDecision(
+                action="escalate", confidence=confidence_value,
+                reason=f"High-risk action: {action_type}", priority="high",
+                requires_human=True,
+            )
+
+        # Invalid scores are not evidence for automation, so fail closed.
+        if not math.isfinite(confidence_value) or not 0.0 <= confidence_value <= 1.0:
+            return RoutingDecision(
+                action="escalate", confidence=confidence_value,
+                reason="Invalid confidence - escalating", priority="high",
+                requires_human=True,
+            )
+        if confidence_value >= self.HIGH_THRESHOLD:
+            return RoutingDecision(
+                action="auto_send", confidence=confidence_value,
+                reason="High confidence", priority="low", requires_human=False,
+            )
+        if confidence_value >= self.MEDIUM_THRESHOLD:
+            return RoutingDecision(
+                action="queue_review", confidence=confidence_value,
+                reason="Medium confidence - needs review", priority="normal",
+                requires_human=True,
+            )
         return RoutingDecision(
-            action="auto_send",
-            confidence=confidence,
-            reason="TODO: implement routing logic",
-            priority="low",
-            requires_human=False,
-        )  # TODO: Replace with implementation
+            action="escalate", confidence=confidence_value,
+            reason="Low confidence - escalating", priority="high",
+            requires_human=True,
+        )
 
 
 # ============================================================
@@ -111,33 +142,33 @@ class ConfidenceRouter:
 hitl_decision_points = [
     {
         "id": 1,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
-        "approval_path": "TODO: Explain approve, reject and timeout behavior",
-        "audit_fields": "TODO: List correlation ID, intent, diff and reviewer decision",
+        "name": "Transfer authorization",
+        "trigger": "Any transfer_money request, regardless of model confidence or amount.",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Proposed action, source and destination account (masked), amount, currency, recipient, recent transfer history, anomaly flags, and customer confirmation evidence.",
+        "example": "The agent proposes a 50,000,000 VND transfer to a new recipient.",
+        "approval_path": "Approve creates a recorded approval token and permits the gateway call; reject cancels the request; timeout leaves it on hold and never sends money.",
+        "audit_fields": "request_id, correlation_id, intent=transfer_money, proposed amount/recipient diff, anomaly flags, reviewer_id, reviewer decision, decision timestamp, and HITL audit layer.",
     },
     {
         "id": 2,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
-        "approval_path": "TODO: Explain approve, reject and timeout behavior",
-        "audit_fields": "TODO: List correlation ID, intent, diff and reviewer decision",
+        "name": "Beneficiary change",
+        "trigger": "Any change_beneficiary or change_recipient request, especially when the recipient is new or device/location signals differ.",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Old and new beneficiary details (masked where appropriate), linked account, proposed transfer amount, beneficiary age, authentication method, device/location changes, and fraud-risk signals.",
+        "example": "The customer asks to replace the saved beneficiary before a high-value transfer.",
+        "approval_path": "Approve records the reviewed old-to-new beneficiary diff; reject preserves the old beneficiary; timeout holds the change and blocks any dependent transfer.",
+        "audit_fields": "request_id, correlation_id, intent=change_beneficiary, old/new beneficiary diff, amount, risk signals, reviewer_id, reviewer decision, timeout state, and HITL audit layer.",
     },
     {
         "id": 3,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
-        "approval_path": "TODO: Explain approve, reject and timeout behavior",
-        "audit_fields": "TODO: List correlation ID, intent, diff and reviewer decision",
+        "name": "Account closure",
+        "trigger": "Any close_account request after the agent has collected the closure intent.",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Account status, identity verification result, remaining balance, linked products, pending transactions, closure reason, and the proposed closure effective date.",
+        "example": "The agent proposes closing an account that still has a pending card settlement.",
+        "approval_path": "Approve sends the closure to the authorized workflow; reject keeps the account active; timeout rejects the automatic workflow and leaves the account unchanged.",
+        "audit_fields": "request_id, correlation_id, intent=close_account, proposed account-state diff, verification and pending-item context, reviewer_id, reviewer decision, decision timestamp, and HITL audit layer.",
     },
 ]
 
